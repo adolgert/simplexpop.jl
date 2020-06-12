@@ -62,9 +62,39 @@ bl5 = block_cover_ij_rect(((204, 1), (250, 601)), (200, 300))
 @test bl5[2][1] == 2
 @test bl5[2][2] == 3
 
+pb1 = pixels_of_block(CartesianIndex(1, 1), (5, 3))
+@test length(pb1) == 15
+@test size(pb1) == (5, 3)
+@test pb1[1][1] == 1
+@test pb1[1][2] == 1
+@test pb1[15][1] == 5
+@test pb1[15][2] == 3
+cp1 = corner_pixel(CartesianIndex(1, 1), (5, 3))
+@test cp1 == pb1[1]
+pb2 = pixels_of_block(CartesianIndex(3, 2), (5, 3))
+@test length(pb2) == 15
+@test size(pb2) == (5, 3)
+@test pb2[1][1] == 11
+@test pb2[1][2] == 4
+@test pb2[15][1] == 15
+@test pb2[15][2] == 6
+cp2 = corner_pixel(CartesianIndex(3, 2), (5, 3))
+@test cp2 == pb2[1]
 
 hrsl_path = "~/data/inputs/HRSL/uganda2018/hrsl_uga_pop.tif"
 landscan_path = "~/data/inputs/landscan/LandScan Global 2018/lspop2018/w001001.adf"
+
+ArchGDAL.read(expanduser(landscan_path)) do ls_ds
+   band = ArchGDAL.getband(ls_ds, 1)
+   pg1 = pixelgrid(band)
+
+   sb1 = load_single_block(band, pg1, (1, 1))
+   sb2 = load_single_block(band, pg1, (20, 20))
+
+   # Load the whole thing.
+   dg1 = load_pixel_grid(band, pg1)
+end
+
 out_path = "hrsl_ls_adjusted.tif"
 if ispath(out_path)
    rm(out_path)
