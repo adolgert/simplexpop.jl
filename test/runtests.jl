@@ -1,6 +1,4 @@
 using simplexpop
 using Test
 
-@testset "simplexpop.jl" begin
-    # Write your own tests here.
-end
+@testset "simplexpop.jl" begin include("test_assign_weights.jl") end

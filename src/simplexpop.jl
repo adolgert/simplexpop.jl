@@ -1,5 +1,5 @@
 module simplexpop
 
-greet() = print("Hello World!")
+include("assignweights.jl")
 
 end # module
