@@ -103,11 +103,14 @@ end
 function crop_to(large::PixelGrid, small::PixelGrid)
     ul, lr = xy_bounds(small)
     ul_ij, lr_ij = ij_cover_rect(large.geo, (ul, lr))
-    uln = (max(large.ul[1], ul_ij[1]), max(large.ul[2], ul_ij[2])
-    lrn = (min(large.lr[1], lr_ij[1]), min(large.lr[2], lr_ij[2])
+    uln = (max(large.ul[1], ul_ij[1]), max(large.ul[2], ul_ij[2]))
+    lrn = (min(large.lr[1], lr_ij[1]), min(large.lr[2], lr_ij[2]))
     PixelGrid(uln, lrn, large.geo)
 end
 
+
+invalid(pg::PixelGrid) = (pg.ul[1] > pg.lr[1]) || (pg.ul[2] > pg.lr[2])
+valid(pg::PixelGrid) = !invalid(pg)
 
 """
 Every raster data is read and written in blocks. That's a rule.
@@ -149,14 +152,21 @@ function load_single_block(band::ArchGDAL.AbstractRasterBand, pg::PixelGrid, blo
     A = zeros(dtype, blocksize...)
     ArchGDAL.readblock!(band, block[1] - 1, block[2] - 1, A)
     ul = ((block[1] - 1) * blocksize[1] + 1, (block[2] - 1) * blocksize[2] + 1)
-    lr = ((block[1] * blocksize[1]), (block[2] * blocksize[2]))
-    xaxis = (ul[1]:lr[1])
-    yaxis = (ul[2]:lr[2])
-    offset = OffsetArray(A, xaxis, yaxis)
+    lr = (block[1] * blocksize[1], block[2] * blocksize[2])
+    offset = OffsetArray(A, ul[1]:lr[1], ul[2]:lr[2])
     npg = PixelGrid(ul, lr, pg.geo)
     DataGrid{dtype}(offset, Tuple(block), Tuple(block), npg)
 end
 
+
+"""
+Iterate over all blocks that cover a given pixel rectangle.
+"""
+function iter_block_indices(pg::PixelGrid, blocksize)
+    coarse_block_bounds = block_cover_ij_rect((pg.ul, pg.lr), blocksize)
+    CartesianIndices((coarse_block_bounds[1][1]:coarse_block_bounds[2][1],
+            coarse_block_bounds[1][2]:coarse_block_bounds[2][2]))
+end
 
 """
 Given HRSL on 30m grid and LandScan (LS) on 900m grid,
@@ -186,22 +196,24 @@ function assignweights(points_path, weight_path, reweighted_path)
         coarse_band = ArchGDAL.getband(coarse_ds, 1)
         coarse_pg = pixelgrid(coarse_band)
         coarse_crop_pg = crop_to(coarse_pg, fine_pg)
-
         coarse_blocksize = ArchGDAL.blocksize(coarse_band)
-        coarse_block_bounds = block_cover_ij_rect(coarse_ij_bounds, coarse_blocksize)
-        block_indices = CartesianIndices((coarse_block_bounds[1][1]:coarse_block_bounds[2][1],
-                coarse_block_bounds[1][2]:coarse_block_bounds[2][2]))
 
+        outside_cnt = 0
         coarse_buffer = zeros(Int32, coarse_blocksize...)
-        for block_idx in block_indices
-            ArchGDAL.readblock!(coarse_band, block_idx[1] - 1, block_idx[2] - 1, coarse_buffer)
-            corner = corner_pixel(block_idx, coarse_blocksize)
-            for pixel in pixels_of_block(block_idx, coarse_blocksize)
-                pixel_rect = xy_bounds(coarse_geo, ((pixel[1], pixel[2]), (pixel[1], pixel[2])))
-                work_xy_rect = intersect_xy(pixel_rect, fine_xy_bounds)
-                fine_ij_rect = ij_cover_rect(fine_geo, work_xy_rect)
-                # Load fine data in such a way that we can write it back with writeblock!
+        for block_idx in iter_block_indices(coarse_crop_pg, coarse_blocksize)
+            block = load_single_block(coarse_band, coarse_pg, block_idx)
+            cartesian = CartesianIndices(block.A)
+            for linear_index in eachindex(block.A)
+                pij = cartesian[linear_index]
+                single_coarse_pg = PixelGrid((pij[1], pij[2]), (pij[1], pij[2]), coarse_crop_pg.geo)
+                fine_cover_pg = crop_to(fine_pg, single_coarse_pg)
+                if valid(fine_cover_pg)
+                    fine_grid = load_pixel_grid(fine_band, fine_cover_pg)
+                else
+                    outside_cnt += 1
+                end
             end
         end
+        @show outside_cnt
     end
 end
