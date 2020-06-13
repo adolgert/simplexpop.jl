@@ -1,4 +1,5 @@
 using simplexpop
 using Test
 
-@testset "simplexpop.jl" begin include("test_assign_weights.jl") end
+@testset "assign_weights.jl" begin include("test_assign_weights.jl") end
+@testset "hilbert.jl" begin include("test_hilbert.jl") end
