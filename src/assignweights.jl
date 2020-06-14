@@ -2,7 +2,7 @@ using ArchGDAL
 using OffsetArrays
 
 """
-    geo_to_xy(geo, i, j)
+    geo_to_xy_corner(origin, transform, i, j)
 
 i and j are 1-based.
 
@@ -15,43 +15,49 @@ left corner of the top left pixel to (width_in_pixels,height_in_pixels) at the
 bottom right corner of the bottom right pixel. The pixel/line location of the
 center of the top left pixel would therefore be (0.5,0.5).
 """
-geo_to_xy_corner(geo, i, j) = (
-        geo[1] + (i - 1) * geo[2] + (j - 1) * geo[3],
-        geo[4] + (i - 1) * geo[5] + (j - 1) * geo[6]
+geo_to_xy_corner(origin, transform, i, j) = transform * [i - 1, j - 1] + origin
+
+
+"""
+    geo_to_xy_center(origin, transform, i, j)
+
+The center of the pixel. See also: [`geo_to_xy_corner`](@ref).
+"""
+geo_to_xy_center(origin, transform, i, j) = (
+        transform * [i - 0.5, j - 0.5] + origin
         )
 
-geo_to_xy_center(geo, i, j) = (
-        geo[1] + (i - .5) * geo[2] + (j - .5) * geo[3],
-        geo[4] + (i - .5) * geo[5] + (j - .5) * geo[6]
-        )
 
-
-function xy_bounds(geo, ij_dim)
-    ul = geo_to_xy_corner(geo, 1, 1)
-    lr = geo_to_xy_corner(geo, ij_dim[1] + 1, ij_dim[2] + 1)
+function xy_bounds(origin, transform, ij_dim)
+    ul = geo_to_xy_corner(origin, transform, 1, 1)
+    lr = geo_to_xy_corner(origin, transform, ij_dim[1] + 1, ij_dim[2] + 1)
     ul, lr
 end
 
 
 
 """
-Pixels are numbered from 1.
+Which pixel contains this xy point.
 """
-function pixel_containing(geo, xy)
-    @assert geo[3] == 0
-    @assert geo[5] == 0
+function pixel_containing(origin, transform, xy)
+    Int.(floor.(transform \ (xy - origin))) .+ 1  # +1 for one-based indexing.
+end
 
-    (1 + Int(floor(1.0 / geo[2] * (xy[1] - geo[1]))),
-     1 + Int(floor(1.0 / geo[6] * (xy[2] - geo[4]))))
+
+"""
+Which pixel is closest to this xy point.
+"""
+function nearest_pixel(origin, transform, xy)
+    Int.(round.(transform / (xy - origin))) .+ 1  # +1 for one-based indexing.
 end
 
 
 """
 The rect is a tuple of (ul, lr).
 """
-function ij_cover_rect(geo, rect)
-    ul_ij = pixel_containing(geo, rect[1])
-    lr_ij = pixel_containing(geo, rect[2])
+function ij_cover_rect(origin, transform, rect)
+    ul_ij = pixel_containing(origin, transform, rect[1])
+    lr_ij = pixel_containing(origin, transform, rect[2])
     ul_ij, lr_ij
 end
 
@@ -74,38 +80,53 @@ function pixels_of_block(block_idx::CartesianIndex, blocksize)
     ))
 end
 
+
 """
-Combines integer bounds on a grid with its geometry.
+Represents a grid extent and its geometry.
+
+The grid extent is an upper-lefthand `(i0, j0)` and a lower right-hand
+`(i1, j1)`, where `i0 < i1` and `j0 < j1`. This orientation comes from
+the geo tradition to flip the y-axis, so increasing y goes negative.
+The `origin` and `transform` are from the GDAL geo array and represent
+the origin of the grid and how each point offsets that origin.
+From the GDAL documentation, the geo is used this way.
+```
+Xgeo = GT(0) + Xpixel*GT(1) + Yline*GT(2)
+Ygeo = GT(3) + Xpixel*GT(4) + Yline*GT(5)
+```
 """
 struct PixelGrid
     ul::Tuple{Int64,Int64}
     lr::Tuple{Int64,Int64}
-    geo::Array{Float64,1}
+    origin::Array{Float64,1}
+    transform::Array{Float64,2}
 end
 
+geo_to_transform(geo) = ([geo[1], geo[4]], [geo[2] geo[3]; geo[5] geo[6]])
 
 function pixelgrid(band::ArchGDAL.AbstractRasterBand)
     ds = ArchGDAL.getdataset(band)
     geo = ArchGDAL.getgeotransform(ds)
     w = ArchGDAL.width(band)
     h = ArchGDAL.height(band)
-    PixelGrid((1, 1), (w, h), geo)
+    origin, transform = geo_to_transform(geo)
+    PixelGrid((1, 1), (w, h), origin, transform)
 end
 
 
 function xy_bounds(pg::PixelGrid)
-    ul = geo_to_xy_corner(pg.geo, pg.ul[1], pg.ul[2])
-    lr = geo_to_xy_corner(pg.geo, pg.lr[1] + 1, pg.lr[2] + 1)
+    ul = geo_to_xy_corner(pg.origin, pg.transform, pg.ul[1], pg.ul[2])
+    lr = geo_to_xy_corner(pg.origin, pg.transform, pg.lr[1] + 1, pg.lr[2] + 1)
     ul, lr
 end
 
 
 function crop_to(large::PixelGrid, small::PixelGrid)
     ul, lr = xy_bounds(small)
-    ul_ij, lr_ij = ij_cover_rect(large.geo, (ul, lr))
+    ul_ij, lr_ij = ij_cover_rect(large.origin, large.transform, (ul, lr))
     uln = (max(large.ul[1], ul_ij[1]), max(large.ul[2], ul_ij[2]))
     lrn = (min(large.lr[1], lr_ij[1]), min(large.lr[2], lr_ij[2]))
-    PixelGrid(uln, lrn, large.geo)
+    PixelGrid(uln, lrn, large.origin, large.transform)
 end
 
 
@@ -154,7 +175,7 @@ function load_single_block(band::ArchGDAL.AbstractRasterBand, pg::PixelGrid, blo
     ul = ((block[1] - 1) * blocksize[1] + 1, (block[2] - 1) * blocksize[2] + 1)
     lr = (block[1] * blocksize[1], block[2] * blocksize[2])
     offset = OffsetArray(A, ul[1]:lr[1], ul[2]:lr[2])
-    npg = PixelGrid(ul, lr, pg.geo)
+    npg = PixelGrid(ul, lr, pg.origin, pg.transform)
     DataGrid{dtype}(offset, Tuple(block), Tuple(block), npg)
 end
 
@@ -205,7 +226,12 @@ function assignweights(points_path, weight_path, reweighted_path)
             cartesian = CartesianIndices(block.A)
             for linear_index in eachindex(block.A)
                 pij = cartesian[linear_index]
-                single_coarse_pg = PixelGrid((pij[1], pij[2]), (pij[1], pij[2]), coarse_crop_pg.geo)
+                single_coarse_pg = PixelGrid(
+                        (pij[1], pij[2]),
+                        (pij[1], pij[2]),
+                        coarse_crop_pg.origin,
+                        coarse_crop_pg.transform
+                        )
                 fine_cover_pg = crop_to(fine_pg, single_coarse_pg)
                 if valid(fine_cover_pg)
                     fine_grid = load_pixel_grid(fine_band, fine_cover_pg)

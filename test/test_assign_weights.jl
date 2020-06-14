@@ -3,40 +3,42 @@ coarse_width_height = (43200, 21600)
 fine_geo = [29.5734769457, 0.00027777777999999997, 0.0, 4.22813426181, 0.0, -0.00027777778]
 fine_width_height = (19536, 20540)
 
-xy1 = geo_to_xy_corner(coarse_geo, 1, 1)
+origin, transform = geo_to_transform(coarse_geo)
+
+xy1 = geo_to_xy_corner(origin, transform, 1, 1)
 @test xy1[1] ≈ -180
 @test xy1[2] ≈ 90
-xy2 = geo_to_xy_corner(coarse_geo, coarse_width_height[1] + 1, coarse_width_height[2] + 1)
+xy2 = geo_to_xy_corner(origin, transform, coarse_width_height[1] + 1, coarse_width_height[2] + 1)
 @test xy2[1] ≈ 180
 @test xy2[2] ≈ -90
 
-xy3 = geo_to_xy_corner(coarse_geo, 24, 36)
-xy4 = geo_to_xy_center(coarse_geo, 24, 36)
+xy3 = geo_to_xy_corner(origin, transform, 24, 36)
+xy4 = geo_to_xy_center(origin, transform, 24, 36)
 @test xy4[1] ≈ xy3[1] + coarse_geo[2] / 2
 @test xy4[2] ≈ xy3[2] + coarse_geo[6] / 2 # Note that the offset is negative, -0.008333.
 
 
-xyb1 = xy_bounds(coarse_geo, coarse_width_height)
+xyb1 = xy_bounds(origin, transform, coarse_width_height)
 @test xyb1[1][1] ≈ -180
 @test xyb1[1][2] ≈ 90
 @test xyb1[2][1] ≈ 180
 @test xyb1[2][2] ≈ -90
 
-xy5 = geo_to_xy_center(coarse_geo, 24, 36)
-ij1 = pixel_containing(coarse_geo, xy5)
+xy5 = geo_to_xy_center(origin, transform, 24, 36)
+ij1 = pixel_containing(origin, transform, xy5)
 @test ij1[1] == 24
 @test ij1[2] == 36
 
-xyb2 = xy_bounds(coarse_geo, coarse_width_height)
+xyb2 = xy_bounds(origin, transform, coarse_width_height)
 # Nudge the corner just a hair so it isn't right on the boundary.
-xyb3 = ((xyb2[1][1], xyb2[1][2]), (xyb2[2][1] - 1e-5, xyb2[2][2] + 1e-5))
-ij_corners = ij_cover_rect(coarse_geo, xyb3)
+xyb3 = ([xyb2[1][1], xyb2[1][2]], [xyb2[2][1] - 1e-5, xyb2[2][2] + 1e-5])
+ij_corners = ij_cover_rect(origin, transform, xyb3)
 @test ij_corners[1][1] == 1
 @test ij_corners[1][2] == 1
 @test ij_corners[2][1] == coarse_width_height[1]
 @test ij_corners[2][1] == coarse_width_height[1]
 
-bl1 = block_cover_ij_rect(((1, 1), (10, 10)), (200, 200))
+bl1 = block_cover_ij_rect(([1, 1], [10, 10]), (200, 200))
 @test bl1[1][1] == 1
 @test bl1[1][2] == 1
 @test bl1[2][1] == 1
