@@ -74,15 +74,6 @@ function boundary_faces(s)
     end
     faces = faces_pad[:, 1:face_cnt]
 
-    # The last step is to pull a Compressed-sparse-column format
-    # from the ordered resultant.
-#     struct SparseMatrixCSC{Tv,Ti<:Integer} <: AbstractSparseMatrix{Tv,Ti}
-#     m::Int                  # Number of rows
-#     n::Int                  # Number of columns
-#     colptr::Vector{Ti}      # Column j is in colptr[j]:(colptr[j+1]-1)
-#     rowval::Vector{Ti}      # Row indices of stored values
-#     nzval::Vector{Tv}       # Stored values, typically nonzeros
-# end
     edges = SparseMatrixCSC{Int64,Int64}(
         n,  # row count is number of simplices
         size(resultant, 2),  # column count is number of edges
