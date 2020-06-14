@@ -76,3 +76,20 @@ function decode_hilbert(z)
     x, y = decode_hilbert_zero(z - 1)
     x + 1, y + 1
 end
+
+
+function hilbert_order(v::AbstractArray, subdivisions)
+    lowx = minimum(v[1, :])
+    lowy = minimum(v[2, :])
+    highx = maximum(v[1, :])
+    highy = maximum(v[2, :])
+    iv = zeros(Int64, size(v, 2))
+    for i in 1:size(v, 2)
+        x = v[:, i]
+        iv[i] = encode_hilbert_zero(
+                Int64(round(x[1] - lowx) / (highx - lowx) * subdivisions),
+                Int64(round(y[1] - lowy) / (highy - lowy) * subdivisions)
+                )
+    end
+    sortperm(iv)
+end

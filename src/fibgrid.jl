@@ -70,15 +70,15 @@ function hexlattice(width, height, r)
         vertex[:, idx] = [r * (i-1) - r * (j-1) / 2, 2 * r * (j-1) / 3]
     end
     # This is too many but we can trim at the end
-    triangles = zeros(Int64, 3, length(v))
+    triangles_pad = zeros(Int64, 3, length(v))
     triangle_idx = 1
     for (i, j) in keys(v)
         triangle = [(i, j), (i + 1, j), (i + 1, j + 1)]
         if all(isvertex.(triangle))
-            triangles[:, triangle_idx] = [v[t] for t in triangle]
+            triangles_pad[:, triangle_idx] = [v[t] for t in triangle]
             triangle_idx += 1
         end
     end
     triangle_cnt = triangle_idx - 1
-    vertex, triangles[:, 1:triangle_cnt]
+    triangles = triangles_pad[:, 1:triangle_cnt]
 end
