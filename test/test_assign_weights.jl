@@ -85,6 +85,8 @@ cp2 = corner_pixel(CartesianIndex(3, 2), (5, 3))
 
 hrsl_path = "~/data/inputs/HRSL/uganda2018/hrsl_uga_pop.tif"
 landscan_path = "~/data/inputs/landscan/LandScan Global 2018/lspop2018/w001001.adf"
+@test isfile(expanduser(hrsl_path))
+@test isfile(expanduser(landscan_path))
 
 ArchGDAL.read(expanduser(landscan_path)) do ls_ds
    band = ArchGDAL.getband(ls_ds, 1)

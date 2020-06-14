@@ -134,6 +134,19 @@ invalid(pg::PixelGrid) = (pg.ul[1] > pg.lr[1]) || (pg.ul[2] > pg.lr[2])
 valid(pg::PixelGrid) = !invalid(pg)
 
 """
+Given a pixel grid, pull out a pixel grid for a single pixel.
+"""
+function onepixelgrid(pg::PixelGrid, pij)
+    PixelGrid(
+            (pij[1], pij[2]),
+            (pij[1], pij[2]),
+            pg.origin,
+            pg.transform
+            )
+end
+
+
+"""
 Every raster data is read and written in blocks. That's a rule.
 The inner pixel grid tells us what the desired rectangle is.
 The array has offset indices from the original large grid.
@@ -226,12 +239,7 @@ function assignweights(points_path, weight_path, reweighted_path)
             cartesian = CartesianIndices(block.A)
             for linear_index in eachindex(block.A)
                 pij = cartesian[linear_index]
-                single_coarse_pg = PixelGrid(
-                        (pij[1], pij[2]),
-                        (pij[1], pij[2]),
-                        coarse_crop_pg.origin,
-                        coarse_crop_pg.transform
-                        )
+                single_coarse_pg = onepixelgrid(coarse_crop_pg, pij)
                 fine_cover_pg = crop_to(fine_pg, single_coarse_pg)
                 if valid(fine_cover_pg)
                     fine_grid = load_pixel_grid(fine_band, fine_cover_pg)
