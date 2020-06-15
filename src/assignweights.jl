@@ -114,6 +114,23 @@ function pixelgrid(band::ArchGDAL.AbstractRasterBand)
 end
 
 
+"""
+Compute the area of the xy intersection of two pixelgrids.
+
+If the returned value is negative, they don't intersect.
+"""
+function intersection_area(a::PixelGrid, b::PixelGrid)
+    # The +1 is because this gives the same upper-left corner in both cases.
+    ula = geo_to_xy_corner(a.origin, a.transform, a.ul[1], a.ul[2])
+    lra = geo_to_xy_corner(a.origin, a.transform, a.lr[1] + 1, a.lr[2] + 1)
+    ulb = geo_to_xy_corner(b.origin, b.transform, b.ul[1], b.ul[2])
+    lrb = geo_to_xy_corner(b.origin, b.transform, b.lr[1] + 1, b.lr[2] + 1)
+    ul = [max(ula[1], ulb[1]), max(ula[2], ulb[2])]
+    lr = [min(ula[1], ulb[1]), min(ula[2], ulb[2])]
+    (lr[1]-ul[1]) * (lr[2] - ul[2])
+end
+
+
 function xy_bounds(pg::PixelGrid)
     ul = geo_to_xy_corner(pg.origin, pg.transform, pg.ul[1], pg.ul[2])
     lr = geo_to_xy_corner(pg.origin, pg.transform, pg.lr[1] + 1, pg.lr[2] + 1)
@@ -218,7 +235,10 @@ transfer landscan density to HRSL settlement pixels that are nonzero.
       4. Rescale by pixel value.
       5. Write modified points blocks.
 """
-function assignweights(points_path, weight_path, reweighted_path)
+function assignweights(
+        points_path, weight_path, reweighted_path;
+        max_pixels = typemax(Int64)
+        )
     # ds = dataset
     fine_copy_ds = ArchGDAL.read(expanduser(points_path)) do fine_ds
         reweighted_path = expanduser(reweighted_path)
@@ -234,6 +254,7 @@ function assignweights(points_path, weight_path, reweighted_path)
 
         outside_cnt = 0
         coarse_buffer = zeros(Int32, coarse_blocksize...)
+        pixel_cnt = 0
         for block_idx in iter_block_indices(coarse_crop_pg, coarse_blocksize)
             block = load_single_block(coarse_band, coarse_pg, block_idx)
             cartesian = CartesianIndices(block.A)
@@ -243,8 +264,18 @@ function assignweights(points_path, weight_path, reweighted_path)
                 fine_cover_pg = crop_to(fine_pg, single_coarse_pg)
                 if valid(fine_cover_pg)
                     fine_grid = load_pixel_grid(fine_band, fine_cover_pg)
+                    pixel_cnt += 1
+                    area = intersection_area(single_coarse_grid.pg, fine_grid.pg)
+                    @assert area >= 0
+                    landscan_value = single_coarse_pg.A[
+                        single_coarse_pg.pg.ulb[1],
+                        single_coarse_pg.pg.ulb[2]
+                    ]
                 else
                     outside_cnt += 1
+                end
+                if pixel_cnt > max_pixels
+                    return nothing
                 end
             end
         end

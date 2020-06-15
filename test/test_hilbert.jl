@@ -16,7 +16,7 @@ zz = Set(Int64[])
 for x in 0:15
   for y in 0:15
     z = encode_hilbert_zero(x, y)
-    @show (x, y, z)
+    # @show (x, y, z)
     @test z ∉ zz
     push!(zz, z)
   end
@@ -27,9 +27,9 @@ table2ind = CartesianIndices(table2)
 for z in 0:15
   x, y = decode_hilbert_zero(z)
   found = table2ind[table2 .== z][1]
-  @show z
-  @show found
-  @show (x, y)
+  # @show z
+  # @show found
+  # @show (x, y)
   @test found[2] - 1 == x
   @test found[1] - 1 == y
 end

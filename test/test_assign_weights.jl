@@ -1,3 +1,5 @@
+using ArchGDAL
+
 coarse_geo = [-180.0, 0.0083333333333333, 0.0, 89.99999999999929, 0.0, -0.0083333333333333]
 coarse_width_height = (43200, 21600)
 fine_geo = [29.5734769457, 0.00027777777999999997, 0.0, 4.22813426181, 0.0, -0.00027777778]
@@ -85,24 +87,30 @@ cp2 = corner_pixel(CartesianIndex(3, 2), (5, 3))
 
 hrsl_path = "~/data/inputs/HRSL/uganda2018/hrsl_uga_pop.tif"
 landscan_path = "~/data/inputs/landscan/LandScan Global 2018/lspop2018/w001001.adf"
-@test isfile(expanduser(hrsl_path))
-@test isfile(expanduser(landscan_path))
+hrsl_exists = isfile(expanduser(hrsl_path))
+landscan_exists = isfile(expanduser(landscan_path))
 
-ArchGDAL.read(expanduser(landscan_path)) do ls_ds
-   band = ArchGDAL.getband(ls_ds, 1)
-   pg1 = pixelgrid(band)
+if hrsl_exists && landscan_exists
+   ArchGDAL.read(expanduser(landscan_path)) do ls_ds
+      band = ArchGDAL.getband(ls_ds, 1)
+      pg1 = pixelgrid(band)
 
-   sb1 = load_single_block(band, pg1, (1, 1))
-   sb2 = load_single_block(band, pg1, (20, 20))
+      sb1 = load_single_block(band, pg1, (1, 1))
+      sb2 = load_single_block(band, pg1, (20, 20))
 
-   # Load the whole thing.
-   dg1 = load_pixel_grid(band, pg1)
+      # Load the whole thing.
+      dg1 = load_pixel_grid(band, pg1)
+   end
+
+   out_path = "hrsl_ls_adjusted.tif"
+   if ispath(out_path)
+      rm(out_path)
+   end
+   assignweights(hrsl_path, landscan_path, out_path; max_pixels = 1)
+   @test ispath(out_path)
+   @test stat(out_path).size > 1210320848
+else
+   println("Could not find HRSL or landscan")
+   println("$(hrsl_path)=$(hrsl_exists)")
+   println("$(landscan_path)=$(landscan_exists)")
 end
-
-out_path = "hrsl_ls_adjusted.tif"
-if ispath(out_path)
-   rm(out_path)
-end
-assignweights(hrsl_path, landscan_path, out_path)
-@test ispath(out_path)
-@test stat(out_path).size > 1210320848

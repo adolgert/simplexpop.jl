@@ -1,0 +1,176 @@
+# This file is machine-generated - editing it directly is not advised
+
+[[ArchGDAL]]
+deps = ["DataStreams", "Dates", "GDAL", "GeoFormatTypes", "GeoInterface"]
+git-tree-sha1 = "12a9901f28472b314bef7878372a7454cec8f760"
+uuid = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
+version = "0.4.0"
+
+[[Base64]]
+uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
+
+[[CEnum]]
+git-tree-sha1 = "215a9aa4a1f23fbd05b92769fdd62559488d70e9"
+uuid = "fa961155-64e5-5f13-b03f-caf6b980ea82"
+version = "0.4.1"
+
+[[DataAPI]]
+git-tree-sha1 = "176e23402d80e7743fc26c19c681bfb11246af32"
+uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
+version = "1.3.0"
+
+[[DataStreams]]
+deps = ["Missings", "WeakRefStrings"]
+git-tree-sha1 = "19cccd7f86ade39d81ca088b932974e97df7f1f6"
+uuid = "9a8bc11e-79be-5b39-94d7-1ccc349a1a85"
+version = "0.4.2"
+
+[[Dates]]
+deps = ["Printf"]
+uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
+
+[[Distributed]]
+deps = ["Random", "Serialization", "Sockets"]
+uuid = "8ba89e20-285c-5b6f-9357-94700520ee1b"
+
+[[GDAL]]
+deps = ["CEnum", "GDAL_jll", "PROJ_jll"]
+git-tree-sha1 = "a83201bc36b81a68ab67d9509b53c48e1c94e218"
+uuid = "add2ef01-049f-52c4-9ee2-e494f65e021a"
+version = "1.1.2"
+
+[[GDAL_jll]]
+deps = ["GEOS_jll", "LibCURL_jll", "Libdl", "PROJ_jll", "Pkg", "SQLite_jll", "Zlib_jll"]
+git-tree-sha1 = "b73c63b05036d90de4561bae34cf1462157020e9"
+uuid = "a7073274-a066-55f0-b90d-d619367d196c"
+version = "3.0.4+0"
+
+[[GEOS_jll]]
+deps = ["Libdl", "Pkg"]
+git-tree-sha1 = "e729fcedd71a19154df937127a97c19c0fe6d9d0"
+uuid = "d604d12d-fa86-5845-992e-78dc15976526"
+version = "3.8.1+0"
+
+[[GeoFormatTypes]]
+git-tree-sha1 = "bb75ce99c9d6fb2edd8ef8ee474991cdacf12221"
+uuid = "68eda718-8dee-11e9-39e7-89f7f65f511f"
+version = "0.3.0"
+
+[[GeoInterface]]
+deps = ["RecipesBase"]
+git-tree-sha1 = "62f6ed44e73c11d10e282053d70b33b0ed8dcbe2"
+uuid = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
+version = "0.5.4"
+
+[[InteractiveUtils]]
+deps = ["Markdown"]
+uuid = "b77e0a4c-d291-57a0-90e8-8db25a27a240"
+
+[[LibCURL_jll]]
+deps = ["LibSSH2_jll", "Libdl", "MbedTLS_jll", "Pkg", "Zlib_jll", "nghttp2_jll"]
+git-tree-sha1 = "54e7f2364ff5134e43c2514309ddf47d2eafa773"
+uuid = "deac9b47-8bc7-5906-a0fe-35ac56dc84c0"
+version = "7.70.0+0"
+
+[[LibGit2]]
+deps = ["Printf"]
+uuid = "76f85450-5226-5b5a-8eaa-529ad045b433"
+
+[[LibSSH2_jll]]
+deps = ["Libdl", "MbedTLS_jll", "Pkg"]
+git-tree-sha1 = "2daf0a757293e5355904b96262fcc54cf45d8fd3"
+uuid = "29816b5a-b9ab-546f-933c-edad1886dfa8"
+version = "1.9.0+1"
+
+[[Libdl]]
+uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+
+[[Logging]]
+uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
+
+[[Markdown]]
+deps = ["Base64"]
+uuid = "d6f4376e-aef5-505a-96c1-9c027394607a"
+
+[[MbedTLS_jll]]
+deps = ["Libdl", "Pkg"]
+git-tree-sha1 = "c83f5a1d038f034ad0549f9ee4d5fac3fb429e33"
+uuid = "c8ffd9c3-330d-5841-b78e-0817d7145fa1"
+version = "2.16.0+2"
+
+[[Missings]]
+deps = ["DataAPI"]
+git-tree-sha1 = "de0a5ce9e5289f27df672ffabef4d1e5861247d5"
+uuid = "e1d29d7a-bbdc-5cf2-9ac0-f12de2c33e28"
+version = "0.4.3"
+
+[[PROJ_jll]]
+deps = ["Libdl", "Pkg", "SQLite_jll"]
+git-tree-sha1 = "9f7cfb270831958a155a858fc5fd66bdd654b3a8"
+uuid = "58948b4f-47e0-5654-a9ad-f609743f8632"
+version = "6.3.2+1"
+
+[[Pkg]]
+deps = ["Dates", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "UUIDs"]
+uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
+
+[[Printf]]
+deps = ["Unicode"]
+uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[[REPL]]
+deps = ["InteractiveUtils", "Markdown", "Sockets"]
+uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
+
+[[Random]]
+deps = ["Serialization"]
+uuid = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+
+[[RecipesBase]]
+git-tree-sha1 = "54f8ceb165a0f6d083f0d12cb4996f5367c6edbc"
+uuid = "3cdcf5f2-1ef4-517c-9805-6587b60abb01"
+version = "1.0.1"
+
+[[SHA]]
+uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
+
+[[SQLite_jll]]
+deps = ["Libdl", "Pkg"]
+git-tree-sha1 = "25675b6872c3fcbe2034510db3a467405b6dc79e"
+uuid = "76ed43ae-9a5d-5a62-8c75-30186b810ce8"
+version = "3.31.1+0"
+
+[[Serialization]]
+uuid = "9e88b42a-f829-5b0c-bbe9-9e923198166b"
+
+[[Sockets]]
+uuid = "6462fe0b-24de-5631-8697-dd941f90decc"
+
+[[Test]]
+deps = ["Distributed", "InteractiveUtils", "Logging", "Random"]
+uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[[UUIDs]]
+deps = ["Random", "SHA"]
+uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
+
+[[Unicode]]
+uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
+
+[[WeakRefStrings]]
+deps = ["DataAPI", "Random", "Test"]
+git-tree-sha1 = "28807f85197eaad3cbd2330386fac1dcb9e7e11d"
+uuid = "ea10d353-3f73-51f8-a26c-33c1cb351aa5"
+version = "0.6.2"
+
+[[Zlib_jll]]
+deps = ["Libdl", "Pkg"]
+git-tree-sha1 = "a2e0d558f6031002e380a90613b199e37a8565bf"
+uuid = "83775a58-1f1d-513f-b197-d71354ab007a"
+version = "1.2.11+10"
+
+[[nghttp2_jll]]
+deps = ["Libdl", "Pkg"]
+git-tree-sha1 = "d4b1ff45cfa721fd60f624fdb52c5a836fafaf8f"
+uuid = "8e850ede-7688-5339-a07c-302acd2aaf8d"
+version = "1.40.0+0"
