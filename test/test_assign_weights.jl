@@ -1,4 +1,5 @@
 using ArchGDAL
+using Test
 
 coarse_geo = [-180.0, 0.0083333333333333, 0.0, 89.99999999999929, 0.0, -0.0083333333333333]
 coarse_width_height = (43200, 21600)

@@ -18,6 +18,7 @@ for x in 0:15
     z = encode_hilbert_zero(x, y)
     # @show (x, y, z)
     @test z ∉ zz
+    @test 0 ≤ z < 256
     push!(zz, z)
   end
 end
@@ -35,10 +36,14 @@ for z in 0:15
 end
 
 xy = Set(Tuple{Int64, Int64}[])
+last = [-1, 0]
 for z in 0:255
   x, y = decode_hilbert_zero(z)
   @test (x, y) ∉ xy
   push!(xy, (x, y))
+  # The next point in the grid must be beside the previous.
+  @test ((x - last[1])^2 == 1) || ((y - last[2])^2 == 1)
+  last = [x, y]
 end
 for i in 0:15
   for j in 0:15

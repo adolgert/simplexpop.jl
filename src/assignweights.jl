@@ -1,4 +1,5 @@
-using ArchGDAL
+using ArchGDAL: read, AbstractRasterBand, getdataset, getgeotransform, blocksize, pixeltype,
+        readblock!, writeblock!, getband, width, height, getnodatavalue
 using OffsetArrays
 
 """
@@ -104,11 +105,11 @@ end
 
 geo_to_transform(geo) = ([geo[1], geo[4]], [geo[2] geo[3]; geo[5] geo[6]])
 
-function pixelgrid(band::ArchGDAL.AbstractRasterBand)
-    ds = ArchGDAL.getdataset(band)
-    geo = ArchGDAL.getgeotransform(ds)
-    w = ArchGDAL.width(band)
-    h = ArchGDAL.height(band)
+function pixelgrid(band::AbstractRasterBand)
+    ds = getdataset(band)
+    geo = getgeotransform(ds)
+    w = width(band)
+    h = height(band)
     origin, transform = geo_to_transform(geo)
     PixelGrid((1, 1), (w, h), origin, transform)
 end
@@ -164,49 +165,97 @@ end
 
 
 """
-Every raster data is read and written in blocks. That's a rule.
-The inner pixel grid tells us what the desired rectangle is.
-The array has offset indices from the original large grid.
+A DataGrid represents a matrix of raster values.
+
+The data is stored as an array of data blocks, but its extent is usually smaller than
+the extent of the blocks. We can always assume that the data is complete blocks.
+We keep the data, A, indexed in absolute ids, so the axis range starts with the actual
+values, not usually from 1.
 """
 struct DataGrid{T}
     A::AbstractArray{T,2}
+    nodatavalue::T
+    blocksize::Array{Int32,1}
     ulb::Tuple{Int32,Int32}  # upper left block
     lrb::Tuple{Int32,Int32}  # lower right block
     pg::PixelGrid
 end
 
 
-function load_pixel_grid(band::ArchGDAL.AbstractRasterBand, pg::PixelGrid)
-    blocksize = ArchGDAL.blocksize(band)
-    ulb, lrb = block_cover_ij_rect((pg.ul, pg.lr), blocksize)
-    dtype = ArchGDAL.pixeltype(band)
-    A = zeros(dtype, (lrb[1] - ulb[1] + 1) * blocksize[1], (lrb[2] - ulb[2] + 1) * blocksize[2])
-    buffer = zeros(dtype, blocksize...)
+function load_pixel_grid(band::AbstractRasterBand, pg::PixelGrid)
+    bs = blocksize(band)
+    ulb, lrb = block_cover_ij_rect((pg.ul, pg.lr), bs)
+    dtype = pixeltype(band)
+    A = zeros(dtype, (lrb[1] - ulb[1] + 1) * bs[1], (lrb[2] - ulb[2] + 1) * bs[2])
+    buffer = zeros(dtype, bs...)
     for bidx in CartesianIndices(((lrb[1] - ulb[1] + 1), (lrb[2] - ulb[2] + 1)))
         # readblock! is zero-based.
-        ArchGDAL.readblock!(band, bidx[1] - 1, bidx[2] - 1, buffer)
-        A[((bidx[1] - 1) * blocksize[1] + 1):(bidx[1] * blocksize[1]),
-            ((bidx[2] - 1) * blocksize[2] + 1):(bidx[2] * blocksize[2])] = buffer
+        readblock!(band, bidx[1] - 1, bidx[2] - 1, buffer)
+        A[((bidx[1] - 1) * bs[1] + 1):(bidx[1] * bs[1]),
+            ((bidx[2] - 1) * bs[2] + 1):(bidx[2] * bs[2])] = buffer
     end
     offset = OffsetArray(
             A,
-            ((ulb[1] - 1) * blocksize[1] + 1):(lrb[1] * blocksize[1]),
-            ((ulb[2] - 1) * blocksize[2] + 1):(lrb[2] * blocksize[2]),
+            ((ulb[1] - 1) * bs[1] + 1):(lrb[1] * bs[1]),
+            ((ulb[2] - 1) * bs[2] + 1):(lrb[2] * bs[2]),
             )
-    DataGrid{dtype}(offset, ulb, lrb, pg)
+    nodata = getnodatavalue(band)
+    DataGrid{dtype}(offset, nodata, bs, ulb, lrb, pg)
 end
 
 
-function load_single_block(band::ArchGDAL.AbstractRasterBand, pg::PixelGrid, block)
-    blocksize = ArchGDAL.blocksize(band)
-    dtype = ArchGDAL.pixeltype(band)
-    A = zeros(dtype, blocksize...)
-    ArchGDAL.readblock!(band, block[1] - 1, block[2] - 1, A)
-    ul = ((block[1] - 1) * blocksize[1] + 1, (block[2] - 1) * blocksize[2] + 1)
-    lr = (block[1] * blocksize[1], block[2] * blocksize[2])
+function count_nonzero_pixels(dg::DataGrid)
+    cnt = 0
+    ul = dg.pg.ul
+    lr = dg.pg.lr
+    for j in ul[2]:lr[2]
+        for i in ul[1]:lr[1]
+            if dg.A[i, j] != dg.nodatavalue
+                cnt += 1
+            end
+        end
+    end
+    percent_filled = cnt / ((lr[2] - ul[2]) * (lr[2] - ul[2]))
+    @show percent_filled
+    cnt
+end
+
+
+function fill_nonzero_pixels!(dg::DataGrid, value)
+    ul = dg.pg.ul
+    lr = dg.pg.lr
+    for j in ul[2]:lr[2]
+        for i in ul[1]:lr[1]
+            if dg.A[i, j] != dg.nodatavalue
+                dg.A[i, j] = value
+            end
+        end
+    end
+end
+
+
+function write_datagrid(dg::DataGrid, band)
+    bs = dg.blocksize
+    for j in dg.ulb[2]:dg.lrb[2]
+        for i in dg.ulb[1]:dg.lrb[1]
+            writeblock!(band, i, j, dg.A[(i*bs[1]):((i+1)*bs[1]-1), (j*bs[2]):((j+1)*bs[2]-1)])
+        end
+    end
+end
+
+
+function load_single_block(band::AbstractRasterBand, pg::PixelGrid, block)
+    bs = blocksize(band)
+    @show bs
+    dtype = pixeltype(band)
+    A = zeros(dtype, bs...)
+    readblock!(band, block[1] - 1, block[2] - 1, A)
+    ul = ((block[1] - 1) * bs[1] + 1, (block[2] - 1) * bs[2] + 1)
+    lr = (block[1] * bs[1], block[2] * bs[2])
     offset = OffsetArray(A, ul[1]:lr[1], ul[2]:lr[2])
     npg = PixelGrid(ul, lr, pg.origin, pg.transform)
-    DataGrid{dtype}(offset, Tuple(block), Tuple(block), npg)
+    nodata = getnodatavalue(band)
+    DataGrid{dtype}(offset, nodata, bs, Tuple(block), Tuple(block), npg)
 end
 
 
@@ -218,6 +267,49 @@ function iter_block_indices(pg::PixelGrid, blocksize)
     CartesianIndices((coarse_block_bounds[1][1]:coarse_block_bounds[2][1],
             coarse_block_bounds[1][2]:coarse_block_bounds[2][2]))
 end
+
+
+function tune_band(fine_band, coarse_band, max_pixels)
+    fine_pg = pixelgrid(fine_band)
+    coarse_pg = pixelgrid(coarse_band)
+    coarse_crop_pg = crop_to(coarse_pg, fine_pg)
+    coarse_blocksize = blocksize(coarse_band)
+
+    outside_cnt = 0
+    coarse_buffer = zeros(Int32, coarse_blocksize...)
+    pixel_cnt = 0
+    for block_idx in iter_block_indices(coarse_crop_pg, coarse_blocksize)
+        block = load_single_block(coarse_band, coarse_pg, block_idx)
+        cartesian = CartesianIndices(block.A)
+        for linear_index in eachindex(block.A)
+            pij = cartesian[linear_index]
+            single_coarse_pg = onepixelgrid(coarse_crop_pg, pij)
+            fine_cover_pg = crop_to(fine_pg, single_coarse_pg)
+            if valid(fine_cover_pg)
+                fine_grid = load_pixel_grid(fine_band, fine_cover_pg)
+                pixel_cnt += 1
+                area = intersection_area(single_coarse_pg, fine_cover_pg)
+                @assert area >= 0
+                landscan_value = block.A[
+                    single_coarse_pg.ul[1],
+                    single_coarse_pg.ul[2]
+                ]
+                # This should be restricted to pixels under the coarse.
+                pixel_cnt = count_nonzero_pixels(fine_grid)
+                rate = max(landscan_value / pixel_cnt, 100)
+                fill_nonzero_pixels!(fine_grid, rate)
+                write_datagrid(fine_grid, fine_band)
+            else
+                outside_cnt += 1
+            end
+            if pixel_cnt > max_pixels
+                return nothing
+            end
+        end
+    end
+    @show outside_cnt
+end
+
 
 """
 Given HRSL on 30m grid and LandScan (LS) on 900m grid,
@@ -240,45 +332,13 @@ function assignweights(
         max_pixels = typemax(Int64)
         )
     # ds = dataset
-    fine_copy_ds = ArchGDAL.read(expanduser(points_path)) do fine_ds
+    fine_copy_ds = read(expanduser(points_path)) do fine_ds
         reweighted_path = expanduser(reweighted_path)
         ArchGDAL.copy(fine_ds, filename = reweighted_path)
     end
-    ArchGDAL.read(expanduser(weight_path)) do coarse_ds
-        fine_band = ArchGDAL.getband(fine_copy_ds, 1)
-        fine_pg = pixelgrid(fine_band)
-        coarse_band = ArchGDAL.getband(coarse_ds, 1)
-        coarse_pg = pixelgrid(coarse_band)
-        coarse_crop_pg = crop_to(coarse_pg, fine_pg)
-        coarse_blocksize = ArchGDAL.blocksize(coarse_band)
-
-        outside_cnt = 0
-        coarse_buffer = zeros(Int32, coarse_blocksize...)
-        pixel_cnt = 0
-        for block_idx in iter_block_indices(coarse_crop_pg, coarse_blocksize)
-            block = load_single_block(coarse_band, coarse_pg, block_idx)
-            cartesian = CartesianIndices(block.A)
-            for linear_index in eachindex(block.A)
-                pij = cartesian[linear_index]
-                single_coarse_pg = onepixelgrid(coarse_crop_pg, pij)
-                fine_cover_pg = crop_to(fine_pg, single_coarse_pg)
-                if valid(fine_cover_pg)
-                    fine_grid = load_pixel_grid(fine_band, fine_cover_pg)
-                    pixel_cnt += 1
-                    area = intersection_area(single_coarse_grid.pg, fine_grid.pg)
-                    @assert area >= 0
-                    landscan_value = single_coarse_pg.A[
-                        single_coarse_pg.pg.ulb[1],
-                        single_coarse_pg.pg.ulb[2]
-                    ]
-                else
-                    outside_cnt += 1
-                end
-                if pixel_cnt > max_pixels
-                    return nothing
-                end
-            end
-        end
-        @show outside_cnt
+    read(expanduser(weight_path)) do coarse_ds
+        fine_band = getband(fine_copy_ds, 1)
+        coarse_band = getband(coarse_ds, 1)
+        tune_band(fine_band, coarse_band, max_pixels)
     end
 end
