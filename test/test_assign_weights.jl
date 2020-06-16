@@ -79,6 +79,9 @@ rectish = [
    ((.5, 3.5), ((1, 3), (2, 4)), false),
    ((1.5, 2.5), ((1, 3), (2, 4)), false),
 ]
+for (pt, rect, result) in rectish
+   @test pointinrect(pt, rect) == result
+end
 
 # Here's our stub setup.
 # Coarse grid from ul=(-10, 16) to lr=(10, 0) in xy
