@@ -66,7 +66,8 @@ end
 
 
 function pointinrect(ij, rect)
-    rect[1][1] <= ij[1] < rect[2][1] && rect[1][2] <= ij[2] < rect[2][2]
+    # For the y, the up and down are switched, so it's rect[2][2].
+    (rect[1][1] <= ij[1] < rect[2][1]) && (rect[2][2] <= ij[2] < rect[1][2])
 end
 
 
@@ -137,9 +138,9 @@ function intersection_area(a::PixelGrid, b::PixelGrid)
     lra = geo_to_xy_corner(a.origin, a.transform, a.lr[1] + 1, a.lr[2] + 1)
     ulb = geo_to_xy_corner(b.origin, b.transform, b.ul[1], b.ul[2])
     lrb = geo_to_xy_corner(b.origin, b.transform, b.lr[1] + 1, b.lr[2] + 1)
-    ul = [max(ula[1], ulb[1]), max(ula[2], ulb[2])]
-    lr = [min(ula[1], ulb[1]), min(ula[2], ulb[2])]
-    (lr[1]-ul[1]) * (lr[2] - ul[2])
+    ul = [max(ula[1], ulb[1]), min(ula[2], ulb[2])]
+    lr = [min(lra[1], lrb[1]), max(lra[2], lrb[2])]
+    (lr[1] - ul[1]) * (ul[2] - lr[2])
 end
 
 
@@ -150,8 +151,8 @@ function xy_bounds(pg::PixelGrid)
 end
 
 
-function crop_to(large::PixelGrid, small::PixelGrid)
-    ul_xy, lr_xy = xy_bounds(small)
+function crop_to(large::PixelGrid, xybounds)
+    ul_xy, lr_xy = xybounds
     ul_ij, lr_ij = ij_cover_rect(large.origin, large.transform, (ul_xy, lr_xy))
     uln = (max(large.ul[1], ul_ij[1]), max(large.ul[2], ul_ij[2]))
     lrn = (min(large.lr[1], lr_ij[1]), min(large.lr[2], lr_ij[2]))
@@ -166,12 +167,7 @@ valid(pg::PixelGrid) = !invalid(pg)
 Given a pixel grid, pull out a pixel grid for a single pixel.
 """
 function onepixelgrid(pg::PixelGrid, pij)
-    PixelGrid(
-            (pij[1], pij[2]),
-            (pij[1], pij[2]),
-            pg.origin,
-            pg.transform
-            )
+    PixelGrid((pij[1], pij[2]), (pij[1], pij[2]), pg.origin, pg.transform)
 end
 
 
@@ -195,7 +191,9 @@ struct StubBand{T} <: AbstractRasterBand
     o::Array{Float64,1}  # origin in xy.
     t::Array{Float64,2}  # linear transform from pixel to xy.
 end
-
+function Base.show(io::IO, b::StubBand{T}) where {T}
+    print(io, "StubBand{$(T)} A=$(size(b.A)) blocksize=$(b.bs):\n\t$(b.o)+$(b.t)")
+end
 ArchGDAL.width(b::StubBand) = size(b.A, 1)
 ArchGDAL.height(b::StubBand) = size(b.A, 2)
 ArchGDAL.blocksize(b::StubBand) = b.bs
@@ -246,8 +244,6 @@ function load_data_grid(band::AbstractRasterBand, pg::PixelGrid)
     dtype = pixeltype(band)
     ul_ij = ((ulb[1] - 1) * bs[1] + 1, (ulb[2] - 1) * bs[2] + 1)
     lr_ij = (lrb[1] * bs[1], lrb[2] * bs[2])
-    @show ul_ij
-    @show lr_ij
     A = zeros(dtype, lr_ij[1] - ul_ij[1] + 1, lr_ij[2] - ul_ij[2] + 1)
     buffer = zeros(dtype, bs...)
     for bidx in CartesianIndices(((lrb[1] - ulb[1] + 1), (lrb[2] - ulb[2] + 1)))
@@ -266,8 +262,8 @@ end
 """
 Count nonzero pixels that are inside the boundsrect.
 """
-function count_nonzero_pixels(dg::DataGrid, boundsrect)
-    cnt = 0
+function count_nonzero_pixels(dg::DataGrid, boundsrect)::Int64
+    cnt = zero(Int64)
     ul = dg.pg.ul
     lr = dg.pg.lr
     # i, j are x, y for GDAL but flipped for the array.
@@ -281,22 +277,24 @@ function count_nonzero_pixels(dg::DataGrid, boundsrect)
             end
         end
     end
-    percent_filled = cnt / ((lr[1] - ul[1]) * (lr[2] - ul[2]))
-    @show percent_filled
-    cnt
+    return cnt
 end
 
 
-function fill_nonzero_pixels!(dg::DataGrid, value)
+function fill_nonzero_pixels!(dg::DataGrid, value, boundsrect)
     ul = dg.pg.ul
     lr = dg.pg.lr
     for j in ul[2]:lr[2]
         for i in ul[1]:lr[1]
             if dg.A[i, j] != dg.nodatavalue
-                dg.A[i, j] = value
+                pt = geo_to_xy_center(dg.pg.origin, dg.pg.transform, i, j)
+                if pointinrect(pt, boundsrect)
+                    dg.A[i, j] = value
+                end
             end
         end
     end
+    return nothing
 end
 
 
@@ -309,12 +307,12 @@ function write_datagrid!(dg::DataGrid, band)
             writeblock!(band, i-1, j-1, dg.A[xrange, yrange])
         end
     end
+    return nothing
 end
 
 
 function load_single_block(band::AbstractRasterBand, pg::PixelGrid, block)
     bs = blocksize(band)
-    @show bs
     dtype = pixeltype(band)
     A = zeros(dtype, bs[1], bs[2])
     readblock!(band, block[1] - 1, block[2] - 1, A)
@@ -330,38 +328,43 @@ end
 function tune_band(fine_band, coarse_band, max_pixels)
     fine_pg = pixelgrid(fine_band)
     coarse_pg = pixelgrid(coarse_band)
-    coarse_crop_pg = crop_to(coarse_pg, fine_pg)
+    coarse_crop_pg = crop_to(coarse_pg, xy_bounds(fine_pg))
     coarse_blocksize = blocksize(coarse_band)
 
     outside_cnt = 0
+    pixel_limit = 0
     coarse_buffer = zeros(Int32, coarse_blocksize...)
-    pixel_cnt = 0
     for block_idx in iter_block_indices(coarse_crop_pg, coarse_blocksize)
         block = load_single_block(coarse_band, coarse_pg, block_idx)
         cartesian = CartesianIndices(block.A)
         for linear_index in eachindex(block.A)
             pij = cartesian[linear_index]
             single_coarse_pg = onepixelgrid(coarse_crop_pg, pij)
-            fine_cover_pg = crop_to(fine_pg, single_coarse_pg)
-            if valid(fine_cover_pg)
+            fine_cover_pg = crop_to(fine_pg, xy_bounds(single_coarse_pg))
+            area = intersection_area(single_coarse_pg, fine_cover_pg)
+            if valid(fine_cover_pg) && area > 1e-9
+                pixel_limit += 1
                 fine_grid = load_data_grid(fine_band, fine_cover_pg)
-                pixel_cnt += 1
-                area = intersection_area(single_coarse_pg, fine_cover_pg)
-                @assert area >= 0
                 landscan_value = block.A[
                     single_coarse_pg.ul[1],
                     single_coarse_pg.ul[2]
                 ]
                 # This should be restricted to pixels under the coarse.
-                pixel_cnt = count_nonzero_pixels(fine_grid, xy_bounds(single_coarse_pg))
-                @show pixel_cnt
-                rate = min(landscan_value / pixel_cnt, 100)
-                fill_nonzero_pixels!(fine_grid, rate)
-                write_datagrid!(fine_grid, fine_band)
+                coarse_rect = xy_bounds(single_coarse_pg)
+                @assert fine_grid.nodatavalue == floatmin(Float64)
+                pixel_cnt = count_nonzero_pixels(fine_grid, coarse_rect)
+                if pixel_cnt > 0
+                    rate = min(landscan_value / pixel_cnt, 100)
+                    @show block_idx
+                    @show pij
+                    @show pixel_cnt
+                    fill_nonzero_pixels!(fine_grid, rate, coarse_rect)
+                    write_datagrid!(fine_grid, fine_band)
+                end
             else
                 outside_cnt += 1
             end
-            if pixel_cnt > max_pixels
+            if pixel_limit >= max_pixels
                 return nothing
             end
         end

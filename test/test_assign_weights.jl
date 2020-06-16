@@ -83,23 +83,33 @@ for (pt, rect, result) in rectish
    @test pointinrect(pt, rect) == result
 end
 
+boundsrect = ([-6.0, 12.0], [-5.0, 11.0])
+pt = [-4.9, 11.9]
+@test !pointinrect(pt, boundsrect)
+
 # Here's our stub setup.
 # Coarse grid from ul=(-10, 16) to lr=(10, 0) in xy
 # Give it w=20, h=16.
 # Fine grid from ul=(-5, 12) to lr=(5, 4) in xy
 # Give it w=10*5=50, h=8*5=40, so 5x the resolution of the coarse.
-coarse_band = StubBand{Int32}(
-   fill(400, 20, 16),
-   [6, 2],  # blocksize
-   Float64[-10, 16] , # origin
-   Float64[1 0.0; 0.0 -1],  # pixel size
-)
-fine_band = StubBand{Float64}(
-   fill(2.5, 50, 40),
-   [5, 3],  # blocksize
-   Float64[-5, 12] , # origin
-   Float64[.2 0.0; 0.0 -.2],  # pixel size
-)
+function make_coarse(A)
+   StubBand{Int32}(
+      A,
+      [6, 2],  # blocksize
+      Float64[-10, 16] , # origin
+      Float64[1 0.0; 0.0 -1],  # pixel size
+   )
+end
+coarse_band = make_coarse(fill(Int32(200), 20, 16))
+function make_fine(A)
+   StubBand{Float64}(
+      A,
+      [5, 3],  # blocksize
+      Float64[-5, 12] , # origin
+      Float64[.2 0.0; 0.0 -.2],  # pixel size
+   )
+end
+fine_band = make_fine(fill(2.5, 50, 40))
 
 coarse_pg = pixelgrid(coarse_band)
 fine_pg = pixelgrid(fine_band)
@@ -114,19 +124,35 @@ r1 = ij_cover_rect(coarse_pg.origin, coarse_pg.transform, ([-5, 12], [-4, 11]))
 @test r1[2][2] <= 6
 r2 = ij_cover_rect(coarse_pg.origin, coarse_pg.transform, ([-4.999, 11.99], [4.999, 4.01]))
 @test r2 == ([6, 5], [15, 12])
-large_crop = crop_to(coarse_pg, fine_pg)
+large_crop = crop_to(coarse_pg, xy_bounds(fine_pg))
+@test large_crop.ul == (6, 5)
 
-sb1 = load_single_block(coarse_band, pg1, (1, 1))
-sb2 = load_single_block(coarse_band, pg1, (3, 3))
-@test sb2.A[13, 5] == 400
+
+sb1 = load_single_block(coarse_band, coarse_pg, (1, 1))
+sb2 = load_single_block(coarse_band, coarse_pg, (3, 3))
+@test sb2.A[13, 5] == 200
 # This is past the last block in x. There are 4 blocks.
-@test_throws AssertionError sb3 = load_single_block(coarse_band, pg1, (5, 3))
+@test_throws AssertionError sb3 = load_single_block(coarse_band, coarse_pg, (5, 3))
 
 # Load the whole thing.
-dg1 = load_data_grid(coarse_band, pg1)
+dg1 = load_data_grid(coarse_band, coarse_pg)
 @test size(dg1.A) == (6 * 4, 16)  # Must be integral blocks to cover the domain.
 
 tune_band(fine_band, coarse_band, typemax(Int64))
+@test fine_band.A[10, 10] ≈ 200 / 25
+
+# Now try some nonzero structure.
+A = fill(floatmin(Float64), 50, 40)
+A[1:5, 1:5] .= 1  # first 1x1 all filled.
+A[3:3, 7:7] .= 1  # Only one nonzero in this 1x1.
+A[6:7, 6:7] .= 1  # Four nonzero here.
+fb2 = make_fine(A)
+tune_band(fb2, coarse_band, typemax(Int64))
+@test all(fb2.A[1:5, 1:5] .≈ 200 / 25)
+@test all(fb2.A[3:3, 7:7] .≈ 100)  # This will hit the max.
+@test all(fb2.A[6:7, 6:7].≈ 200 / 4)
+
+
 
 ## A live data test.
 hrsl_path = "~/data/inputs/HRSL/uganda2018/hrsl_uga_pop.tif"
