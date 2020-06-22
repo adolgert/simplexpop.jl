@@ -205,8 +205,14 @@ function ArchGDAL.readblock!(b::StubBand, i::Integer, j::Integer, buffer)
     xaxis = (b.bs[1]*i + 1):min(b.bs[1]*(i+1), size(b.A, 1))
     yaxis = (b.bs[2]*j + 1):min(b.bs[2]*(j+1), size(b.A, 2))
     buffer[1:length(xaxis), 1:length(yaxis)] = b.A[xaxis, yaxis]
+    if length(xaxis) < b.bs[1]
+        buffer[(length(xaxis) + 1):b.bs[1], :] .= getnodatavalue(b)
+    end
+    if length(yaxis) < b.bs[2]
+        buffer[:, (length(yaxis) + 1):b.bs[2]] .= getnodatavalue(b)
+    end
 end
-ArchGDAL.getnodatavalue(b::StubBand{T}) where {T <: Real} = floatmin(T)
+ArchGDAL.getnodatavalue(b::StubBand{T}) where {T <: Real} = -floatmax(T)
 ArchGDAL.getnodatavalue(b::StubBand{T}) where {T <: Integer} = typemin(T)
 function ArchGDAL.writeblock!(b::StubBand, i::Integer, j::Integer, buffer)
     @assert 0 <= b.bs[1] * i < width(b)  # beginning of block is less than width.
@@ -304,7 +310,7 @@ function write_datagrid!(dg::DataGrid, band)
         for i in dg.ulb[1]:dg.lrb[1]
             xrange = ((i - 1) * bs[1] + 1):(i * bs[1])
             yrange = ((j - 1) * bs[2] + 1):(j * bs[2])
-            writeblock!(band, i-1, j-1, dg.A[xrange, yrange])
+            writeblock!(band, i - 1, j - 1, dg.A[xrange, yrange])
         end
     end
     return nothing
@@ -335,31 +341,40 @@ function tune_band(fine_band, coarse_band, max_pixels)
     pixel_limit = 0
     coarse_buffer = zeros(Int32, coarse_blocksize...)
     for block_idx in iter_block_indices(coarse_crop_pg, coarse_blocksize)
-        block = load_single_block(coarse_band, coarse_pg, block_idx)
+        block = load_single_block(coarse_band, coarse_crop_pg, block_idx)
         cartesian = CartesianIndices(block.A)
         for linear_index in eachindex(block.A)
             pij = cartesian[linear_index]
             single_coarse_pg = onepixelgrid(coarse_crop_pg, pij)
-            fine_cover_pg = crop_to(fine_pg, xy_bounds(single_coarse_pg))
+            coarse_rect = xy_bounds(single_coarse_pg)
+            fine_cover_pg = crop_to(fine_pg, coarse_rect)
             area = intersection_area(single_coarse_pg, fine_cover_pg)
             if valid(fine_cover_pg) && area > 1e-9
                 pixel_limit += 1
                 fine_grid = load_data_grid(fine_band, fine_cover_pg)
+                @show fine_grid.A .> 0
+                @show fine_grid.pg.ul
+                @show fine_grid.pg.lr
                 landscan_value = block.A[
                     single_coarse_pg.ul[1],
                     single_coarse_pg.ul[2]
                 ]
                 # This should be restricted to pixels under the coarse.
-                coarse_rect = xy_bounds(single_coarse_pg)
-                @assert fine_grid.nodatavalue == floatmin(Float64)
+                @assert fine_grid.nodatavalue == -floatmax(Float64)
                 pixel_cnt = count_nonzero_pixels(fine_grid, coarse_rect)
                 if pixel_cnt > 0
                     rate = min(landscan_value / pixel_cnt, 100)
                     @show block_idx
                     @show pij
+                    @show coarse_rect
                     @show pixel_cnt
+                    @show sum(fine_grid.A .> 0)
                     fill_nonzero_pixels!(fine_grid, rate, coarse_rect)
+                    @show sum(fine_grid.A .> 0)
+                    before = sum(fine_band.A .> 0)
                     write_datagrid!(fine_grid, fine_band)
+                    after = sum(fine_band.A .> 0)
+                    @show (before, after)
                 end
             else
                 outside_cnt += 1
@@ -372,6 +387,49 @@ function tune_band(fine_band, coarse_band, max_pixels)
     @show outside_cnt
 end
 
+
+function whole_band(fine_band, coarse_band, max_pixels)
+    fine_pg = pixelgrid(fine_band)
+    coarse_pg = pixelgrid(coarse_band)
+    coarse_crop_pg = crop_to(coarse_pg, xy_bounds(fine_pg))
+    ccpg = coarse_crop_pg
+    base = (ccpg.ul[1] - 1, ccpg.ul[2] - 1)
+    coarse = ArchGDAL.read(coarse_band, ccpg.ul[1]:ccpg.lr[1], ccpg.ul[1]:ccpg.lr[2])
+    fine = ArchGDAL.read(fine_band)
+    fine_no_data = ArchGDAL.getnodatavalue(fine_band)
+
+    coarse_count = zeros(Int32, size(coarse)...)
+    for jc in size(coarse, 2)
+        for ic in size(coarse, 1)
+            single_pg = onepixelgrid(coarse_crop_pg, base + [ic, jc])
+            rect = xy_bounds(single_pg)
+            ulf, lrf = ij_cover_rect(single_pg.origin, single_pg.transform, rect)
+            for jff in ulf[2]:lrf[2]
+                for iff in ulf[1]:lrf[1]
+                    center = geo_to_xy_center(fine_pg.origin, fine_pg.transform, iff, jff)
+                    if pointinrect(center, rect) && fine[iff, jff] != fine_no_data
+                        coarse_count[ic, jc] += 1
+                    end
+                end
+            end
+        end
+    end
+
+    for jff in 1:size(fine, 2)
+        for iff in 1:size(fine, 1)
+            if fine[iff, jff] != fine_no_data
+                center = geo_to_xy_center(fine_pg.origin, fine_pg.transform, iff, jff)
+                ls_pixel = pixel_containing(coarse_pg.origin, coarse_pg.transform, center)
+                ls_shift = ls_pixel - base
+                count = coarse_count[ls_shift...]
+                pop = coarse[ls_shift...]
+                rate = min(pop / count, 100)
+                fine[iff, jff] = rate
+            end
+        end
+    end
+    ArchGDAL.write!(fine_band, fine)
+end
 
 """
 Given HRSL on 30m grid and LandScan (LS) on 900m grid,
@@ -401,6 +459,6 @@ function assignweights(
     ArchGDAL.read(expanduser(weight_path)) do coarse_ds
         fine_band = getband(fine_copy_ds, 1)
         coarse_band = getband(coarse_ds, 1)
-        tune_band(fine_band, coarse_band, max_pixels)
+        whole_band(fine_band, coarse_band, max_pixels)
     end
 end

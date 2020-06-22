@@ -1,5 +1,6 @@
 using ArchGDAL
 using Test
+include("../src/hilbert.jl")
 
 coarse_geo = [-180.0, 0.0083333333333333, 0.0, 89.99999999999929, 0.0, -0.0083333333333333]
 coarse_width_height = (43200, 21600)
@@ -41,43 +42,35 @@ ij_corners = ij_cover_rect(origin, transform, xyb3)
 @test ij_corners[2][1] == coarse_width_height[1]
 @test ij_corners[2][1] == coarse_width_height[1]
 
-bl1 = block_cover_ij_rect(([1, 1], [10, 10]), (200, 200))
-@test bl1[1][1] == 1
-@test bl1[1][2] == 1
-@test bl1[2][1] == 1
-@test bl1[2][2] == 1
-bl2 = block_cover_ij_rect(((1, 1), (200, 200)), (200, 200))
-@test bl2[1][1] == 1
-@test bl2[1][2] == 1
-@test bl2[2][1] == 1
-@test bl2[2][2] == 1
-bl3 = block_cover_ij_rect(((1, 1), (201, 250)), (200, 300))
-@test bl3[1][1] == 1
-@test bl3[1][2] == 1
-@test bl3[2][1] == 2
-@test bl3[2][2] == 1
-bl4 = block_cover_ij_rect(((1, 1), (200, 301)), (200, 300))
-@test bl4[1][1] == 1
-@test bl4[1][2] == 1
-@test bl4[2][1] == 1
-@test bl4[2][2] == 2
-bl5 = block_cover_ij_rect(((204, 1), (250, 601)), (200, 300))
-@test bl5[1][1] == 2
-@test bl5[1][2] == 1
-@test bl5[2][1] == 2
-@test bl5[2][2] == 3
+bci_trial = [
+   (([1, 1], [10, 10]), (200, 200), ((1, 1), (1, 1))),
+   (((1, 1), (200, 200)), (200, 200), ((1, 1), (1, 1))),
+   (((1, 1), (201, 250)), (200, 300), ((1, 1), (2, 1))),
+   (((1, 1), (200, 301)), (200, 300), ((1, 1), (1, 2))),
+   (((204, 1), (250, 601)), (200, 300), ((2, 1), (2, 3))),
+   (((5, 50), (5, 50)), (2, 10), ((3, 5), (3, 5))),
+   (((4, 50), (5, 50)), (2, 10), ((2, 5), (3, 5))),
+   (((5, 40), (5, 50)), (2, 10), ((3, 4), (3, 5))),
+   (((5, 50), (6, 50)), (2, 10), ((3, 5), (3, 5))),
+   (((5, 50), (7, 50)), (2, 10), ((3, 5), (4, 5))),
+]
+for (ij_rect, bs, result) in bci_trial[8:8]
+   ij = (Int.(ij_rect[1]), Int.(ij_rect[2]))
+   bl1 = block_cover_ij_rect(ij, Int.(bs))
+   @test bl1 == result
+end
 
 rectish = [
-   ((1, 1), ((0, 0), (2, 2)), true),
-   ((3, 1), ((0, 0), (2, 4)), false),
-   ((1, 3), ((0, 0), (2, 4)), true),
-   ((-1, 1), ((0, 0), (2, 4)), false),
-   ((1, -1), ((0, 0), (2, 4)), false),
-   ((-1, -1), ((0, 0), (2, 4)), false),
-   ((3, 5), ((0, 0), (2, 4)), false),
-   ((1.5, 3.5), ((1, 3), (2, 4)), true),
-   ((.5, 3.5), ((1, 3), (2, 4)), false),
-   ((1.5, 2.5), ((1, 3), (2, 4)), false),
+   ((1, 1), ((0, 2), (2, 0)), true),
+   ((3, 1), ((0, 4), (2, 0)), false),
+   ((1, 3), ((0, 4), (2, 0)), true),
+   ((-1, 1), ((0, 4), (2, 0)), false),
+   ((1, -1), ((0, 4), (2, 0)), false),
+   ((-1, -1), ((0, 4), (2, 0)), false),
+   ((3, 5), ((0, 4), (2, 0)), false),
+   ((1.5, 3.5), ((1, 4), (2, 3)), true),
+   ((.5, 3.5), ((1, 4), (2, 3)), false),
+   ((1.5, 2.5), ((1, 4), (2, 3)), false),
 ]
 for (pt, rect, result) in rectish
    @test pointinrect(pt, rect) == result
@@ -134,23 +127,34 @@ sb2 = load_single_block(coarse_band, coarse_pg, (3, 3))
 # This is past the last block in x. There are 4 blocks.
 @test_throws AssertionError sb3 = load_single_block(coarse_band, coarse_pg, (5, 3))
 
-# Load the whole thing.
-dg1 = load_data_grid(coarse_band, coarse_pg)
+# Create an array with unique values we can check.
+AA = Int32[encode_hilbert(x[1], x[2]) for x in CartesianIndices((20,16))]
+copya = copy(AA)
+cb2 = make_coarse(AA)
+dg1 = load_data_grid(cb2, coarse_pg)
 @test size(dg1.A) == (6 * 4, 16)  # Must be integral blocks to cover the domain.
-
+@test dg1.A == copya
 tune_band(fine_band, coarse_band, typemax(Int64))
 @test fine_band.A[10, 10] ≈ 200 / 25
 
 # Now try some nonzero structure.
-A = fill(floatmin(Float64), 50, 40)
-A[1:5, 1:5] .= 1  # first 1x1 all filled.
-A[3:3, 7:7] .= 1  # Only one nonzero in this 1x1.
-A[6:7, 6:7] .= 1  # Four nonzero here.
-fb2 = make_fine(A)
+A2 = fill(-floatmax(Float64), 50, 40)
+fb2 = make_fine(A2)
 tune_band(fb2, coarse_band, typemax(Int64))
-@test all(fb2.A[1:5, 1:5] .≈ 200 / 25)
-@test all(fb2.A[3:3, 7:7] .≈ 100)  # This will hit the max.
-@test all(fb2.A[6:7, 6:7].≈ 200 / 4)
+@test all(fb2.A .== -floatmax(Float64))
+
+# Now try some nonzero structure.
+A3 = fill(-floatmax(Float64), 50, 40)
+A3[1:5, 1:5] .= 1  # first 1x1 all filled.
+A3[3:3, 7:7] .= 1  # Only one nonzero in this 1x1.
+A3[6:7, 6:7] .= 1  # Four nonzero here.
+fb3 = make_fine(A3)
+@test sum(fb3.A .> 0) == 25 + 1 + 4
+tune_band(fb3, coarse_band, 2)
+
+@test all(fb3.A[1:5, 1:5] .≈ 200 / 25)
+@test all(fb3.A[3:3, 7:7] .≈ 100)  # This will hit the max.
+@test all(fb3.A[6:7, 6:7].≈ 200 / 4)
 
 
 
@@ -160,7 +164,7 @@ landscan_path = "~/data/inputs/landscan/LandScan Global 2018/lspop2018/w001001.a
 hrsl_exists = isfile(expanduser(hrsl_path))
 landscan_exists = isfile(expanduser(landscan_path))
 
-if hrsl_exists && landscan_exists && false
+if hrsl_exists && landscan_exists
    out_path = "hrsl_ls_adjusted.tif"
    if ispath(out_path)
       rm(out_path)
