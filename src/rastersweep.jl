@@ -41,9 +41,14 @@ function cover_rect(rect, geo, bounds)
 end
 
 
-function over_sweep!(geo, coarse, fine, fine_missing)
+function over_sweep!(geo, coarse, coarse_missing, fine, fine_missing)
     # fine_rect = raster_rect(geo[2], [1 size(fine, 1); 1 size(fine, 2)])
     for cidx in CartesianIndices(coarse)
+        coarse_value = coarse[cidx]
+        if coarse_value == coarse_missing
+            continue
+        end
+        @assert coarse_value >= 0
         rect = pixel_rect(geo[1], cidx)
         fine_indices = cover_rect(rect, geo[2], size(fine))
         if length(fine_indices) == 0
@@ -51,7 +56,7 @@ function over_sweep!(geo, coarse, fine, fine_missing)
         end
         nonzero = sum([fine[fidx] != fine_missing for fidx in fine_indices])
         if nonzero > 0
-            rate = min(100, coarse[cidx] / nonzero)
+            rate = min(100, coarse_value / nonzero)
             for rmidx in fine_indices
                 if fine[rmidx] != fine_missing
                     fine[rmidx] = rate
@@ -69,9 +74,10 @@ function whole_band(a::ArchGDAL.Dataset, b::ArchGDAL.IDataset)
     raw_geo = ArchGDAL.getgeotransform.([a, b])
     geo = band_geo.(raw_geo)
     coarse = ArchGDAL.read(band[1])
+    coarse_no_data = ArchGDAL.getnodatavalue(band[1])
     fine = ArchGDAL.read(band[2])
     fine_no_data = ArchGDAL.getnodatavalue(band[2])
-    over_sweep!(geo, coarse, fine, fine_no_data)
+    over_sweep!(geo, coarse, coarse_no_data, fine, fine_no_data)
     ArchGDAL.write!(band[2], fine)
 end
 

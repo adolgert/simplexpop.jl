@@ -29,16 +29,14 @@ end
 
 function overgeometry(toapply, layer)
    nfeature = ArchGDAL.nfeature(layer)
-   result = zeros(Base.return_types(toapply)[1], nfeature)
+   result = fill(("", zero(Base.return_types(toapply)[1])), nfeature)
    for featureidx in 1:nfeature
       ArchGDAL.getfeature(layer, featureidx - 1) do feature
-         admin1 = ArchGDAL.getfield(feature, 2 - 1)
-         admin3 = ArchGDAL.getfield(feature, 6 - 1)
+         admin = ArchGDAL.getfield(feature, 7 - 1)
          geom = ArchGDAL.getgeom(feature, 0)
          envelope = ArchGDAL.envelope(geom)
-         @show (admin1, admin3, envelope)
-         @show (envelope.MinX, envelope.MaxX, envelope.MinY, envelope.MaxY)
-         result[featureidx] = toapply(geom)
+         @show admin
+         result[featureidx] = (admin, toapply(geom))
       end
    end
    result
@@ -62,17 +60,30 @@ function build_countup(raster)
       # We use a GDAL point to test for inside polygon.
       geom_point = ArchGDAL.createpoint()
       ArchGDAL.addpoint!(geom_point, 0.0, 0.0)
+      within = fill(CartesianIndex(0, 0), length(indices))
+      inside_cnt = 0
       for idx in indices
          if raster.data[idx] != raster.no_data
             xy = pixel_center(raster.geo, [idx[1], idx[2]])
             ArchGDAL.setpoint!(geom_point, 0, xy[1], xy[2])
             if ArchGDAL.within(geom_point, geometry)
-               total += raster.data[idx]
+               value = raster.data[idx]
+               @assert value >= 0
+               total += value
+               inside_cnt += 1
+               within[inside_cnt] = idx
             end
          end
       end
-      @show total
-      total
+      largest = 0.0
+      for inside_idx in 1:inside_cnt
+         idx = within[inside_idx]
+         pop_rate = 1000 * raster.data[idx] / total
+         @assert pop_rate >= 0
+         raster.data[idx] = pop_rate
+         largest = max(largest, pop_rate)
+      end
+      largest
    end
 end
 
@@ -80,7 +91,9 @@ end
 hrsl_path = "hrsl_ls_adjusted.tif"
 admin3_path = expanduser(joinpath("~", "data", "projects", "uganda2020", "outputs",
    "uganda_subcounties_2019_topology_fix", "uganda_subcounties_2019_topology_fix.shp"))
-@show ispath(admin3_path)
+admin1_path = expanduser(joinpath("~", "data", "projects", "uganda2020", "inputs",
+   "uganda_districts_2019-wgs84", "uganda_districts_2019-wgs84.shp"))
+@show ispath(admin1_path)
 ArchGDAL.read(hrsl_path) do hrsl_ds
    geo = band_geo(ArchGDAL.getgeotransform(hrsl_ds))
    hrsl_band = ArchGDAL.getband(hrsl_ds, 1)
@@ -89,12 +102,21 @@ ArchGDAL.read(hrsl_path) do hrsl_ds
    hrsl_raster = RasterRead(hrsl, hrsl_no_data, geo)
    count_up = build_countup(hrsl_raster)
 
-   ArchGDAL.read(admin3_path) do sc_dataset
+   ArchGDAL.read(admin1_path) do sc_dataset
       @show ArchGDAL.nlayer(sc_dataset)
-      admin3 = ArchGDAL.getlayer(sc_dataset, 0)
-      layerinfo(admin3)
-      totals = overgeometry(count_up, admin3)
-      @show sum(totals)
-      writedlm("admin3_totals.txt", totals)
+      admin = ArchGDAL.getlayer(sc_dataset, 0)
+      layerinfo(admin)
+      totals = overgeometry(count_up, admin)
+      writedlm("admin1_largest_fraction.txt", totals)
+      largest = maximum(x[2] for x in totals)
+      @show largest
+
+      copy_path = "hrsl_proportion.tif"
+      if ispath(copy_path)
+         rm(copy_path)
+      end
+      ArchGDAL.copy(hrsl_ds, filename = copy_path) do hrsl_copy_ds
+         ArchGDAL.write!(hrsl_copy_ds, hrsl, 0)
+      end
    end
 end
