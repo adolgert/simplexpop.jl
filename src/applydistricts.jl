@@ -50,6 +50,7 @@ struct RasterRead
    geo::Geo
 end
 
+
 function build_countup(raster)
    function count_up(geometry)::Float64
       envelope = ArchGDAL.envelope(geometry)
@@ -78,6 +79,7 @@ function build_countup(raster)
       largest = 0.0
       for inside_idx in 1:inside_cnt
          idx = within[inside_idx]
+         # All values are 1000 times the actual fraction for numerical accuracy.
          pop_rate = 1000 * raster.data[idx] / total
          @assert pop_rate >= 0
          raster.data[idx] = pop_rate
@@ -85,6 +87,26 @@ function build_countup(raster)
       end
       largest
    end
+end
+
+
+"""
+Make a dataset with the same size and transform as the given dataset
+but it has two bands, one with floats and one with integers.
+"""
+function create_fraction(dataset, path)
+   b = ArchGDAL.getband(dataset, 1)
+   w = ArchGDAL.width(b)
+   h = ArchGDAL.height(b)
+   driver = ArchGDAL.getdriver("GTiff")
+   ds = ArchGDAL.create(path; driver = driver, width = w, height = h, nbands = 1, dtype = Int32)
+   ArchGDAL.setgeotransform!(ds, ArchGDAL.getgeotransform(dataset))
+   ArchGDAL.setproj!(ds, ArchGDAL.getproj(dataset))
+   ArchGDAL.getband(ds, 1) do band
+      ArchGDAL.setnodatavalue!(band, typemin(Int32))
+      ArchGDAL.fillraster!(band, 0)
+   end
+   ds
 end
 
 
