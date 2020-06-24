@@ -82,6 +82,13 @@ function whole_band(a::ArchGDAL.Dataset, b::ArchGDAL.IDataset)
 end
 
 
+"""
+     assignweights(points_path, weight_path, reweighted_path)
+
+Given the HRSL data, the LandScan data, and a path where you want
+a new dataset, this makes a new dataset at `reweighted_path` that has
+a point for every HRSL point but is weighted by the LandScan weights.
+"""
 function assignweights(points_path, weight_path, reweighted_path)
     # ds = dataset
     fine_copy_ds = ArchGDAL.read(expanduser(points_path)) do fine_ds
