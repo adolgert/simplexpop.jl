@@ -1,6 +1,11 @@
 """
-Does an insertion sort, returning the sorted array and a count of the
-number of swaps.
+    countedinsertionsort!(a)
+
+Sorts an array and returns the number of swaps required to sort.
+
+This is useful when you want to know the number
+of transpositions of vertices in a simplex. This determines the new
+orientation of the simplex relative to the old one.
 """
 function countedinsertionsort!(a)
     swaps = zero(Int64)

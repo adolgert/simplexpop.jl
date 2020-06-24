@@ -16,8 +16,9 @@ zz = Set(Int64[])
 for x in 0:15
   for y in 0:15
     z = encode_hilbert_zero(x, y)
-    @show (x, y, z)
+    # @show (x, y, z)
     @test z ∉ zz
+    @test 0 ≤ z < 256
     push!(zz, z)
   end
 end
@@ -27,18 +28,22 @@ table2ind = CartesianIndices(table2)
 for z in 0:15
   x, y = decode_hilbert_zero(z)
   found = table2ind[table2 .== z][1]
-  @show z
-  @show found
-  @show (x, y)
+  # @show z
+  # @show found
+  # @show (x, y)
   @test found[2] - 1 == x
   @test found[1] - 1 == y
 end
 
 xy = Set(Tuple{Int64, Int64}[])
+last = [-1, 0]
 for z in 0:255
   x, y = decode_hilbert_zero(z)
   @test (x, y) ∉ xy
   push!(xy, (x, y))
+  # The next point in the grid must be beside the previous.
+  @test ((x - last[1])^2 == 1) || ((y - last[2])^2 == 1)
+  last = [x, y]
 end
 for i in 0:15
   for j in 0:15

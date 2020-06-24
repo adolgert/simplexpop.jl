@@ -3,6 +3,10 @@ uuid = "c3f66482-5a8f-406d-8d17-30d89eccedc9"
 authors = ["IHME Malaria Team"]
 version = "0.1.0"
 
+[deps]
+ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
+OffsetArrays = "6fe1bfb0-de20-5000-8ca7-80f57d26f881"
+
 [compat]
 julia = "1.4"
 
